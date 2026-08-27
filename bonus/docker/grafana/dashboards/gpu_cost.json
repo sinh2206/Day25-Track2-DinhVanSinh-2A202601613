@@ -1,12 +1,122 @@
 {
-  "title": "Lab 25 — GPU Cost & Efficiency",
+  "title": "Lab 25 — GPU Cost & Efficiency (NimbusAI FinOps)",
+  "uid": "lab25-gpu-finops",
   "schemaVersion": 39,
+  "refresh": "5s",
+  "time": {"from": "now-5m", "to": "now"},
   "panels": [
-    {"type": "timeseries", "title": "GPU-Util % (the 'busy' clock)", "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
-     "targets": [{"expr": "gpu_util_pct"}]},
-    {"type": "timeseries", "title": "MFU (real efficiency)", "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
-     "targets": [{"expr": "gpu_mfu"}]},
-    {"type": "bargauge", "title": "Wasted $/hr (paid FLOPs not used)", "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
-     "targets": [{"expr": "gpu_wasted_cost_usd_per_hr"}]}
+    {
+      "id": 1,
+      "type": "bargauge",
+      "title": "GPU-Util % (nvidia-smi — the 'busy clock')",
+      "description": "This metric LIES. High util does NOT mean efficient compute.",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "horizontal", "displayMode": "gradient"},
+      "fieldConfig": {
+        "defaults": {"unit": "percent", "min": 0, "max": 100,
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "green", "value": null}, {"color": "yellow", "value": 60}, {"color": "red", "value": 90}
+          ]}
+        }
+      },
+      "targets": [{"expr": "gpu_util_pct", "legendFormat": "{{gpu_id}} ({{gpu_type}})"}]
+    },
+    {
+      "id": 2,
+      "type": "bargauge",
+      "title": "MFU — Real Compute Efficiency (truth)",
+      "description": "MFU = achieved_tflops / peak_tflops. Good: 35-50%. <20% = wasting money.",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "horizontal", "displayMode": "gradient"},
+      "fieldConfig": {
+        "defaults": {"unit": "percentunit", "min": 0, "max": 1,
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "red", "value": null}, {"color": "yellow", "value": 0.20}, {"color": "green", "value": 0.35}
+          ]}
+        }
+      },
+      "targets": [{"expr": "gpu_mfu", "legendFormat": "{{gpu_id}} ({{gpu_type}})"}]
+    },
+    {
+      "id": 3,
+      "type": "bargauge",
+      "title": "Wasted $/hr — Paid FLOPs Not Used = (1 - MFU) × $/hr",
+      "description": "This is money leaving your wallet for zero compute value. Ranked by waste.",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "horizontal", "displayMode": "gradient"},
+      "fieldConfig": {
+        "defaults": {"unit": "currencyUSD",
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "green", "value": null}, {"color": "yellow", "value": 0.5}, {"color": "red", "value": 1.5}
+          ]}
+        }
+      },
+      "targets": [{"expr": "sort_desc(gpu_wasted_cost_usd_per_hr)", "legendFormat": "{{gpu_id}} ({{gpu_type}})"}]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "GPU-Util LIE Detected (util≥90% but MFU<30%)",
+      "description": "1 = GPU is a 'liar' — nvidia-smi says busy but actual compute efficiency is <30%.",
+      "gridPos": {"h": 4, "w": 8, "x": 0, "y": 16},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background"},
+      "fieldConfig": {
+        "defaults": {"mappings": [{"type": "value", "options": {"0": {"text": "OK", "color": "green"}, "1": {"text": "LIE!", "color": "red"}}}]}
+      },
+      "targets": [{"expr": "gpu_util_lie", "legendFormat": "{{gpu_id}}"}]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Idle Waste $/day (util < 10%)",
+      "description": "GPUs running but doing nothing. Each hour = on-demand rate wasted.",
+      "gridPos": {"h": 4, "w": 8, "x": 8, "y": 16},
+      "options": {"reduceOptions": {"calcs": ["sum"]}, "colorMode": "background"},
+      "fieldConfig": {
+        "defaults": {"unit": "currencyUSD",
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "green", "value": null}, {"color": "yellow", "value": 5}, {"color": "red", "value": 20}
+          ]}
+        }
+      },
+      "targets": [{"expr": "gpu_idle_waste_usd_per_day", "legendFormat": "{{gpu_id}}"}]
+    },
+    {
+      "id": 6,
+      "type": "bargauge",
+      "title": "MBU — Memory Bandwidth Utilization",
+      "description": "LLM decode is memory-bound. Low MBU = memory bottleneck not the FLOPs.",
+      "gridPos": {"h": 4, "w": 8, "x": 16, "y": 16},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "horizontal", "displayMode": "basic"},
+      "fieldConfig": {
+        "defaults": {"unit": "percentunit", "min": 0, "max": 1,
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "red", "value": null}, {"color": "yellow", "value": 0.30}, {"color": "green", "value": 0.50}
+          ]}
+        }
+      },
+      "targets": [{"expr": "gpu_mbu", "legendFormat": "{{gpu_id}}"}]
+    },
+    {
+      "id": 7,
+      "type": "bargauge",
+      "title": "Average Power Draw (Watts)",
+      "gridPos": {"h": 4, "w": 12, "x": 0, "y": 20},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "horizontal", "displayMode": "basic"},
+      "fieldConfig": {"defaults": {"unit": "watt"}},
+      "targets": [{"expr": "gpu_avg_power_w", "legendFormat": "{{gpu_id}} ({{gpu_type}})"}]
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Full GPU Summary Table",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20},
+      "options": {"showHeader": true},
+      "targets": [
+        {"expr": "gpu_util_pct", "legendFormat": "{{gpu_id}}", "instant": true, "refId": "Util"},
+        {"expr": "gpu_mfu",      "legendFormat": "{{gpu_id}}", "instant": true, "refId": "MFU"},
+        {"expr": "gpu_wasted_cost_usd_per_hr", "legendFormat": "{{gpu_id}}", "instant": true, "refId": "Wasted"}
+      ]
+    }
   ]
 }
